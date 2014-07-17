@@ -10,7 +10,9 @@ RAVE = pyRAVE.readCSV('RAVE_DR4.csv')
 # Selection criteria by the user
 
 user_select = np.ones(len(RAVE['rave_obs_id']),dtype=bool) # all entries
-user_select = (RAVE['snr_k']>40)
+user_select = (RAVE['snr_k']>20) &\
+              (RAVE['ehrv'] < 8) &\
+              (RAVE['algo_conv_k'] == 0)
 
 
 

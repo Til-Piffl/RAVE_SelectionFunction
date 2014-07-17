@@ -159,7 +159,7 @@ def JmK_color_cut(b,Jmag,Kmag):
     return keep
 
 
-def remove_problematic_fields(l,b):
+def remove_problematic_fields(l,b,ra,dec):
     '''
     -----------------
     unproblematic_fields = pyRAVE.remove_problematic_fields(l,b)
@@ -182,10 +182,16 @@ def remove_problematic_fields(l,b):
                             regions, 'False' otherwise.
     -----------------
     '''
-    problematic_fields =  (abs(b) < 5) |\
-                          ((abs(b) < 10.)&((l<45.)|(l>315.))) |\
-                          (((l>330)|(l<30))&(b<25)&(b>0))
-    return problematic_fields == False
+
+    infootprint = (abs(b) >= 25) | \
+                  ( (abs(b)>=5)&(l>=225)&(l<=315) ) | \
+                  ( (b>10)&(b<25)&(l<=330)&(l>=30) ) | \
+                  ( (b<-10)&(b>-25) )
+    twomass_ext = (dec <= 2) | \
+                  ( (dec<5)&(ra <= 90) ) |\
+                  ( (dec<5)&(ra >= 112.5)&(ra <= 255) ) |\
+                  ( (dec<5)&(ra >= 292.5) )
+    return infootprint & twomass_ext
 
 
 def computeHEALPIX_ids(ra,de):
