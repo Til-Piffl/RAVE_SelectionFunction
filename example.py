@@ -12,9 +12,8 @@ RAVE = pyRAVE.readCSV('RAVE_DR4.csv')
 user_select = np.ones(len(RAVE['rave_obs_id']),dtype=bool) # all entries
 user_select = (RAVE['snr_k']>20) &\
               (RAVE['ehrv'] < 8) &\
-              (RAVE['algo_conv_k'] == 0)
-
-
+              (RAVE['correlationcoeff'] >= 10) &\
+              (abs(RAVE['correctionrv']) < 10)
 
 # =======================================================
 
@@ -30,15 +29,15 @@ colour_cut = pyRAVE.JmK_color_cut(RAVE['b'],
 print np.sum(unique&(colour_cut==False)), " entries lost from colour cut."
 
 # Remove sky regions that were not systematically observed
-unproblematic = pyRAVE.remove_problematic_fields(RAVE['l'],RAVE['b'])
-print np.sum(unique&colour_cut&(unproblematic==False)), \
+footprint = pyRAVE.apply_footprint(RAVE['l'],RAVE['b'],RAVE['ra'],RAVE['de'])
+print np.sum(unique&colour_cut&(footprint==False)), \
     " entries lost from invalid sky region removal."
 
 
 print "-------------------"
-print np.sum(unique & colour_cut & unproblematic & (user_select==False)),\
+print np.sum(unique & colour_cut & footprint & (user_select==False)),\
     " stars lost from user defined selection."
-use = unique & colour_cut & unproblematic & user_select
+use = unique & colour_cut & footprint & user_select
 print "-------------------"
 print np.sum(use), " stars left."
 

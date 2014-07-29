@@ -5,6 +5,95 @@ import cPickle
 STR_TAGS = ['rave_obs_id','raveid','id_2mass','id_denis','id_ucac4',\
             'id_ppmxl','c1','c2','c3','c4','c5','c6','zeropointflag']
 
+# Transformation matrix between equatorial and galactic coordinates:
+# [x_G  y_G  z_G] = [x  y  z] . A_G
+A_G = np.array([[-0.0548755604, +0.4941094279, -0.8676661490],
+                [-0.8734370902, -0.4448296300, -0.1980763734],
+                [-0.4838350155, +0.7469822445, +0.4559837762]])
+
+# inverse matrix
+iA_G = np.linalg.inv(A_G)
+d2r = np.pi/180
+r2d = 180./np.pi
+def gal2eqCoords(L,B):
+    '''
+    Computes Equatorial angular coordinates via the method descibed
+    in the Introduction to the Hipparcos catalog.
+
+    Input:
+
+    L    - Galactic longitude in degree (1d-array or single)
+    B    - Galactic latitude in degree (1d-array or single)
+
+    Output:
+
+    RA   - right ascension in degree
+    DE   - declination in degree
+    
+    History:
+    Written by Til Piffl                          May 2013
+    '''
+
+    l = np.array(L).reshape(-1)*d2r
+    b = np.array(B).reshape(-1)*d2r
+    assert len(l) == len(b)
+    sb,cb = np.sin(b),np.cos(b)
+    sl,cl = np.sin(l),np.cos(l)
+    
+    aux0 = iA_G[0,0]*cb*cl + iA_G[1,0]*cb*sl + iA_G[2,0]*sb
+    aux1 = iA_G[0,1]*cb*cl + iA_G[1,1]*cb*sl + iA_G[2,1]*sb
+    aux2 = iA_G[0,2]*cb*cl + iA_G[1,2]*cb*sl + iA_G[2,2]*sb
+
+    de = np.arcsin(aux2)*r2d
+    ra = np.arctan2(aux1,aux0)*r2d
+    ra[ra<0] += 360.
+
+    if len(ra) == 1:
+        return ra[0],de[0]
+    else:
+        return ra,de
+
+def eq2galCoords(RA,DE):
+    '''
+    Computes Galactic angular coordinates via the method descibed
+    in the Introduction to the Hipparcos catalog.
+
+    Input:
+
+    RA   - right ascension in degree (1d-array or single)
+    DE   - declination in degree (1d-array or single)
+
+    Output:
+
+    l    - Galactic longitude in degree
+    b    - Galactic latitude in degree
+    
+    History:
+    Written by Til Piffl                          May 2013
+    '''
+
+    ra = np.array(RA).reshape(-1)*d2r
+    de = np.array(DE).reshape(-1)*d2r
+    assert len(ra) == len(de)
+
+    sde,cde = np.sin(de),np.cos(de)
+    sra,cra = np.sin(ra),np.cos(ra)
+    
+    aux0 = A_G[0,0]*cde*cra + A_G[1,0]*cde*sra + A_G[2,0]*sde
+    aux1 = A_G[0,1]*cde*cra + A_G[1,1]*cde*sra + A_G[2,1]*sde
+    aux2 = A_G[0,2]*cde*cra + A_G[1,2]*cde*sra + A_G[2,2]*sde
+
+    b = np.arcsin(aux2)*r2d
+    l = np.arctan2(aux1,aux0)*r2d
+    l[l<0] += 360.
+
+    if len(l) == 1:
+        return l[0],b[0]
+    else:
+        return l,b
+
+
+
 def readCSV(fname,str_tags=STR_TAGS):
     '''
     ----------------
@@ -30,7 +119,7 @@ def readCSV(fname,str_tags=STR_TAGS):
     ----------------
     '''
     f = open(fname,'r')
-    l0 = [tag.lower() for tag in f.readline()[:-1].split(',')]
+    l0 = [tag.lower()[1:-1] for tag in f.readline()[:-1].split(',')]
     l = f.readlines()
     Nentries =len(l)
     f.close()
@@ -160,13 +249,16 @@ def JmK_color_cut(b,Jmag,Kmag):
 
 
 def remove_problematic_fields(l,b,ra,dec):
+    return apply_footprint(l,b,ra,dec)
+
+def apply_footprint(l,b,ra,dec):
     '''
     -----------------
-    unproblematic_fields = pyRAVE.remove_problematic_fields(l,b)
+    in_footprint = pyRAVE.apply_footprint(l,b,ra,dec)
     -----------------
-    Removes regions on the sky that are not suited for statistical
-    analysis, mainly calibration fields and from the intermediate
-    input catalogue.
+    Applies RAVE footprint and removes regions on the sky that are
+    not suited for statistical analysis, mainly calibration fields
+    and from the intermediate input catalogue.
 
     -----------------
     Input
@@ -177,21 +269,26 @@ def remove_problematic_fields(l,b,ra,dec):
     -----------------
     Output
 
-    unproblematic_fields :  1d bool array of same length as input
+    in_footprint :  1d bool array of same length as input
                             arrays. 'True' for stars in unproblematic
                             regions, 'False' otherwise.
     -----------------
     '''
 
+    L = np.copy(l)
+    if (L<0).any():
+        L[L<0] += 360
+
+    visible_sky = (dec < 5)
     infootprint = (abs(b) >= 25) | \
-                  ( (abs(b)>=5)&(l>=225)&(l<=315) ) | \
-                  ( (b>10)&(b<25)&(l<=330)&(l>=30) ) | \
+                  ( (abs(b)>=5)&(L>=225)&(L<=315) ) | \
+                  ( (b>10)&(b<25)&(L<=330)&(L>=30) ) | \
                   ( (b<-10)&(b>-25) )
     twomass_ext = (dec <= 2) | \
                   ( (dec<5)&(ra <= 90) ) |\
                   ( (dec<5)&(ra >= 112.5)&(ra <= 255) ) |\
                   ( (dec<5)&(ra >= 292.5) )
-    return infootprint & twomass_ext
+    return infootprint & visible_sky & twomass_ext
 
 
 def computeHEALPIX_ids(ra,de):
