@@ -3,4 +3,5 @@
 *.txt
 *.dat
 *.csv
+*.ebf
 !2MASS_number_counts.txt
