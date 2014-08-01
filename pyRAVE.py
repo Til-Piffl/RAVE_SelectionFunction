@@ -247,10 +247,6 @@ def JmK_color_cut(b,Jmag,Kmag):
     keep = (abs(b) >= 25) | (JmK >= 0.5)
     return keep
 
-
-def remove_problematic_fields(l,b,ra,dec):
-    return apply_footprint(l,b,ra,dec)
-
 def apply_footprint(l,b,ra,dec):
     '''
     -----------------
@@ -265,13 +261,15 @@ def apply_footprint(l,b,ra,dec):
 
     l :      Galactic longitude; 1d array
     b :      Galactic latitude; 1d array
+    ra :     Right ascension; 1d array
+    dec :    Declination; 1d array
 
     -----------------
     Output
 
     in_footprint :  1d bool array of same length as input
-                            arrays. 'True' for stars in unproblematic
-                            regions, 'False' otherwise.
+                            arrays. 'True' for stars inside the
+                            footprint, 'False' otherwise.
     -----------------
     '''
 
@@ -291,102 +289,86 @@ def apply_footprint(l,b,ra,dec):
     return infootprint & visible_sky & twomass_ext
 
 
-def computeHEALPIX_ids(ra,de):
+def computeHEALPIX_ids(l,b):
     '''
     ----------------
-    ids = pyRAVE.computeHEALPIX_ids(ra,de)
+    ids = pyRAVE.computeHEALPIX_ids(l,b)
     ----------------
 
     Input
     
-    ra :      Right ascension in degree; 1d array
-    de :      Declination in degree; 1d array
+    l :      Galactic longitude in degree; 1d array
+    b :      Galactic latitude in degree; 1d array
 
     Output
 
     ids :     HEALPIX ids (1d array) for NSIDE = 32
     '''
     NSIDE = 32 # Fixed in precomputed 2MASS table!
-    return healpy.ang2pix(NSIDE,(90.-de)*np.pi/180,ra*np.pi/180.)
+    return healpy.ang2pix(NSIDE,(90.-b)*np.pi/180,l*np.pi/180.)
 
 
-def computeCompleteness(HEALPIX_ids,I2MASS,Jmag,Kmag,dI):
+def computeCompleteness(HEALPIX_ids,I2MASS):
     '''
     -----------------------
-    comp = pyRAVE.computeCompleteness(l,b,I2MASS)
+    comp,Ibins = pyRAVE.computeCompleteness(l,b,I2MASS)
     -----------------------
-    Returns completeness w.r.t. 2MASS in (ra,dec,I2MASS)-bins. The (ra,dec) grid
-    is done using HEALPIX pixelisation of the sky (NSIDE = 32).
+    Returns completeness w.r.t. 2MASS in (l,b,I2MASS)-bins. The (l,b) grid
+    is done using HEALPIX pixelisation of the sky (NSIDE = 32). This results
+    in 12288 pixels. The bin width in the I magnitudes is 0.2 mag.
 
     -----------------------
     Input
 
-    HEALPIX_ids : HEALPIX ids for NSIDE = 32; 1d array
+    HEALPIX_ids : HEALPIX ids for NSIDE = 32 (12288 pixels); 1d array
     I2MASS :      approximated I magnitude; 1d array
-    Jmag:         2MASS J magnitude; 1d array
-    Kmag:         2MASS Ks magnitude; 1d array
-
-    dI :          Bin width for the I2mass grid; float
 
     -----------------------
     Output
 
-    comp ....
+    comp  :      2d array with completeness values (Number of
+                 pixels x Number of I magnitude bins)
+    Ibins :      I magnitude bin borders
 
     -----------------------
     '''
 
-    fname = 'tmp2MASS.dat'
-    f = open(fname,'rb')
-    NSIDE = cPickle.load(f)
-    I_limits = cPickle.load(f) # [8,13]
-    tmp_Jrange = cPickle.load(f) # [6,13.5]
-    tmp_Krange = cPickle.load(f) # [5,13]
-    tmp_JmK_min = cPickle.load(f)
-    TwoMASS = {}
-    TwoMASS['Imag'] = cPickle.load(f)
-    TwoMASS['healpixNum'] = cPickle.load(f)
-    N2M = cPickle.load(f)
-    TwoMASSorder = cPickle.load(f)
-    f.close()
-
-    Limits_2MASS = (Jmag >= tmp_Jrange[0]) & (Jmag <= tmp_Jrange[1]) & \
-                   (Kmag >= tmp_Krange[0]) & (Kmag <= tmp_Krange[1]) & \
-                   (I2MASS >= I_limits[0]) & (I2MASS <= I_limits[-1])
-
-
-    hp_ids = HEALPIX_ids[Limits_2MASS]
-    RAVEorder = np.argsort(hp_ids)
-
-    i2mass = I2MASS[Limits_2MASS]
-
-    Ibins = np.arange(I_limits[0],I_limits[1]+dI,dI)
+    fname = '2MASS_number_counts.txt'
+    f = open(fname,'r')
+    l = f.readlines()
+    NSIDE = int(l[0].split()[0])
     Npix = healpy.nside2npix(NSIDE)
+    NIbins = int(l[0].split()[1])
+    Ibins = np.array([float(i) for i in l[1].split()])
+    f.close()
+    dist2MASS = np.loadtxt(fname,skiprows=2)
+
+    hp_ids = np.copy(HEALPIX_ids)
+    RAVEorder = np.argsort(hp_ids)
+    i2mass = np.copy(I2MASS)
+
     NR = 1.*np.histogram(hp_ids,np.arange(Npix+1))[0]
 
     comp = np.zeros((Npix,len(Ibins)-1))
 
+    count = 0
+    countS = 0
     for i in range(Npix):
         if NR[i] == 0:
             continue
-        if i == 0:
-            subRAVE  = RAVEorder[:NR[i]]
-            sub2MASS  = TwoMASSorder[:N2M[i]]
-        else:
-            subRAVE  = RAVEorder[np.sum(NR[:i-1]):np.sum(NR[:i])]
-            sub2MASS  = TwoMASSorder[np.sum(N2M[:i-1]):np.sum(N2M[:i])]
+        subRAVE  = RAVEorder[np.sum(NR[:i]):np.sum(NR[:i+1])]
 
         distRAVE  = 1.*np.histogram(i2mass[subRAVE],Ibins)[0]
-        dist2MASS = 1.*np.histogram(TwoMASS['Imag'][sub2MASS],Ibins)[0]
-        dist2MASS[distRAVE>dist2MASS] = distRAVE[distRAVE>dist2MASS]
-        if not (dist2MASS >= distRAVE).all():
-            print i, 'more rave than 2mass stars', \
-                np.sum(distRAVE),np.sum(dist2MASS), \
-                90.-healpy.pix2ang(NSIDE,i)[0]*180./pi
-            print ['%.1f'%i for i in distRAVE]
-            print ['%.1f'%i for i in (distRAVE/dist2MASS)]
-            break
-        tmp = dist2MASS != 0
-        comp[i][tmp] = distRAVE[tmp]/dist2MASS[tmp]
+        if not (dist2MASS[i] >= distRAVE).all():
+            count += 1
+            take = dist2MASS[i] < distRAVE
+            print 'In pixel %i: more rave than 2MASS stars'%(i), \
+                np.sum(distRAVE[take]),np.sum(dist2MASS[i][take]), \
+                90.-healpy.pix2ang(NSIDE,i)[0]*180./np.pi
+            countS += np.sum(distRAVE[take])-np.sum(dist2MASS[i][take])
+            distRAVE[take] = dist2MASS[i][take]
+        tmp = dist2MASS[i] != 0
+        comp[i][tmp] = distRAVE[tmp]/dist2MASS[i][tmp]
 
+    print count, countS
     return comp,Ibins

@@ -1,5 +1,4 @@
 import pyRAVE
-import pylab as plb
 import numpy as np
 import healpy
 
@@ -31,7 +30,7 @@ print np.sum(unique&(colour_cut==False)), " entries lost from colour cut."
 # Remove sky regions that were not systematically observed
 footprint = pyRAVE.apply_footprint(RAVE['l'],RAVE['b'],RAVE['ra'],RAVE['de'])
 print np.sum(unique&colour_cut&(footprint==False)), \
-    " entries lost from invalid sky region removal."
+    " entries outside footprint"
 
 
 print "-------------------"
@@ -42,19 +41,16 @@ print "-------------------"
 print np.sum(use), " stars left."
 
 # Compute HEALPIX indices
-RAVE['healpix_ids'] = pyRAVE.computeHEALPIX_ids(RAVE['radeg_2mass'],
-                                                RAVE['dedeg_2mass'])
+RAVE['healpix_ids'] = pyRAVE.computeHEALPIX_ids(RAVE['l'],
+                                                RAVE['b'])
 
 # Evaluate completeness in (ra,dec,I2mass) bins
 comp,Irange = pyRAVE.computeCompleteness(RAVE['healpix_ids'][use],
-                                         RAVE['I2MASS'][use],
-                                         RAVE['jmag_2mass'][use],
-                                         RAVE['kmag_2mass'][use],
-                                         0.2)
+                                         RAVE['I2MASS'][use])
 
 
 # Write into ASCII file
-ofname = 'RAVE_completeness.txt'
+ofname = 'RAVE_completeness_new.txt'
 f = open(ofname,'w')
 
 for I in Irange:
